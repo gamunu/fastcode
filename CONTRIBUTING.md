@@ -1,6 +1,4 @@
-# Contribute to Rin
-
-English | [简体中文](./CONTRIBUTING_zh_CN.md)
+# Contribute
 
 We are happy to accept your patches and contributions to this project. You just need to follow some small guidelines.
 
@@ -81,7 +79,7 @@ If you want to skip the hook, run `git commit` with the `--no-verify` option.
 
 # Committing Changes
 
-1. for simple patches, they can usually be reviewed within 10 minutes during the day in the UTC+8 time zone. 2.
+1. for simple patches, they can usually be reviewed within 10 minutes during the day in the UTC+5:30 time zone. 2.
 
 2. Do not force push minor changes after the PR is ready for review. Doing so forces maintainers to re-read your entire
    PR, which delays the review process. 3.

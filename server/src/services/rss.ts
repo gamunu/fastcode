@@ -61,7 +61,7 @@ export async function rssCrontab(env: Env) {
     const frontendUrl = `${(env.FRONTEND_URL.startsWith("http://") || env.FRONTEND_URL.startsWith("https://") ? '' :'https://')}${env.FRONTEND_URL}`;
     const db = drizzle(env.DB, { schema: schema })
     let title = env.RSS_TITLE;
-    const description = env.RSS_DESCRIPTION || "Feed from Rin";
+    const description = env.RSS_DESCRIPTION || "Feed from FastCode";
     if (!title) {
         const user = await db.query.users.findFirst({ where: eq(users.id, 1) });
         if (!user) {
@@ -77,7 +77,7 @@ export async function rssCrontab(env: Env) {
         favicon: `${frontendUrl}/favicon.png`,
         copyright: "All rights reserved 2024",
         updated: new Date(), // optional, default = today
-        generator: "Feed from Rin", // optional, default = 'Feed for Node.js'
+        generator: "Feed from FastCode", // optional, default = 'Feed for Node.js'
         feedLinks: {
             rss: `${frontendUrl}/sub/rss.xml`,
             json: `${frontendUrl}/sub/rss.json`,
