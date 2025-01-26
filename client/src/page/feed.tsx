@@ -24,6 +24,7 @@ type Feed = {
   id: number;
   title: string | null;
   content: string;
+  summary: string;
   uid: number;
   createdAt: Date;
   updatedAt: Date;
