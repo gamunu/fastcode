@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react"
-import { Helmet } from 'react-helmet'
 import { useTranslation } from "react-i18next"
 import { Link, useSearch } from "wouter"
 import { FeedCard } from "../components/feed_card"
@@ -8,6 +7,7 @@ import { client } from "../main"
 import { headersWithAuth } from "../utils/auth"
 import { siteName } from "../utils/constants"
 import { tryInt } from "../utils/int"
+import MetaTags from "../components/meta_tags.tsx";
 
 type FeedsData = {
     size: number,
@@ -48,14 +48,13 @@ export function SearchPage({ keyword }: { keyword: string }) {
     const title = t('article.search.title$keyword', { keyword })
     return (
         <>
-            <Helmet>
-                <title>{`${title} - ${process.env.NAME}`}</title>
-                <meta property="og:site_name" content={siteName} />
-                <meta property="og:title" content={title} />
-                <meta property="og:image" content={process.env.AVATAR} />
-                <meta property="og:type" content="article" />
-                <meta property="og:url" content={document.URL} />
-            </Helmet>
+            <MetaTags
+                title={`${title} - ${process.env.NAME}`}
+                siteName={siteName}
+                image={process.env.AVATAR}
+                type="website"
+                description={`Search results for: ${keyword}`}
+            />
             <Waiting for={status === 'idle'}>
                 <main className="w-full flex flex-col justify-center items-center mb-8">
                     <div className="wauto text-start text-black dark:text-white py-4 text-4xl font-bold">

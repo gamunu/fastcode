@@ -1,6 +1,5 @@
 import i18next from "i18next";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Helmet } from 'react-helmet';
 import { useTranslation } from "react-i18next";
 import Modal from 'react-modal';
 import Select from 'react-select';
@@ -13,6 +12,7 @@ import { ProfileContext } from "../state/profile";
 import { shuffleArray } from "../utils/array";
 import { headersWithAuth } from "../utils/auth";
 import { siteName } from "../utils/constants";
+import MetaTags from "../components/meta_tags.tsx";
 
 
 type FriendItem = {
@@ -90,14 +90,12 @@ export function FriendsPage() {
         publish({ name, desc, avatar, url, showAlert })
     }
     return (<>
-        <Helmet>
-            <title>{`${t('friends.title')} - ${process.env.NAME}`}</title>
-            <meta property="og:site_name" content={siteName} />
-            <meta property="og:title" content={t('friends.title')} />
-            <meta property="og:image" content={process.env.AVATAR} />
-            <meta property="og:type" content="article" />
-            <meta property="og:url" content={document.URL} />
-        </Helmet>
+        <MetaTags
+          title={`${t('friends.title')} - ${process.env.NAME}`}
+          siteName={siteName}
+          image={process.env.AVATAR}
+          type="website"
+        />
         <Waiting for={friendsAvailable.length !== 0 || friendsUnavailable.length !== 0 || status === "idle"}>
             <main className="w-full flex flex-col justify-center items-center mb-8 t-primary ani-show">
                 <FriendList title={t('friends.title')} show={friendsAvailable.length > 0} friends={friendsAvailable} />

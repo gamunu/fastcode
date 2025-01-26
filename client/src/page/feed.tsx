@@ -1,5 +1,4 @@
 import {useContext, useEffect, useRef, useState} from "react";
-import {Helmet} from "react-helmet";
 import {useTranslation} from "react-i18next";
 import ReactModal from "react-modal";
 import Popup from "reactjs-popup";
@@ -19,6 +18,7 @@ import {Tips} from "../components/tips";
 import {useLoginModal} from "../hooks/useLoginModal";
 import mermaid from "mermaid";
 import {AdjacentSection} from "../components/adjacent_feed.tsx";
+import MetaTags from "../components/meta_tags.tsx";
 
 type Feed = {
   id: number;
@@ -155,35 +155,15 @@ export function FeedPage({ id, TOC, clean }: { id: string, TOC: () => JSX.Elemen
   return (
     <Waiting for={feed || error}>
       {feed && (
-        <Helmet>
-          <title>{`${feed.title ?? "Unnamed"} - ${process.env.NAME}`}</title>
-          <meta property="og:site_name" content={siteName} />
-          <meta property="og:title" content={feed.title ?? ""} />
-          <meta property="og:image" content={headImage ?? process.env.AVATAR} />
-          <meta property="og:type" content="article" />
-          <meta property="og:url" content={document.URL} />
-          <meta
-            name="og:description"
-            content={
-              feed.content.length > 200
-                ? feed.content.substring(0, 200)
-                : feed.content
-            }
+          <MetaTags
+              title={`${feed.title ?? "Unnamed"} - ${process.env.NAME}`}
+              siteName={siteName}
+              description={feed.summary}
+              image={headImage ?? process.env.AVATAR}
+              url={document.URL}
+              author={feed.user.username}
+              keywords={feed.hashtags.map(({ name }) => name)}
           />
-          <meta name="author" content={feed.user.username} />
-          <meta
-            name="keywords"
-            content={feed.hashtags.map(({ name }) => name).join(", ")}
-          />
-          <meta
-            name="description"
-            content={
-              feed.content.length > 200
-                ? feed.content.substring(0, 200)
-                : feed.content
-            }
-          />
-        </Helmet>
       )}
       <div className="w-full flex flex-row justify-center ani-show">
         {error && (
