@@ -1,9 +1,8 @@
 import {PutObjectCommand} from "@aws-sdk/client-s3";
 import path from "path";
 import Container, {Service} from "typedi";
-import type {DB} from "../_worker";
 import type {Env} from "../db/db";
-import {getDB, getEnv} from "./di";
+import {getEnv} from "./di";
 import {createS3Client} from "./s3";
 
 // Cache Utils for storing data in memory and persisting to S3
@@ -12,21 +11,19 @@ import {createS3Client} from "./s3";
 @Service()
 export class CacheImpl {
     private cache: Map<string, { value: any, timestamp: number }> = new Map();
-    private db: DB;
     private env: Env;
-    private cacheUrl: string;
-    private type: string;
+    private readonly cacheUrl: string;
+    private readonly type: string;
     private loaded: boolean = false;
     private loading: Promise<void> | null = null;
     private s3 = createS3Client();
-    private memoryTTL: number; // Time in milliseconds for in-memory cache to expire
+    private readonly memoryTTL: number; // Time in milliseconds for in-memory cache to expire
     private saveQueue: Set<string> = new Set(); // Queue of keys that need to be saved
     private saveTimer: ReturnType<typeof setTimeout> | null = null;
-    private saveInterval: number; // Minimum time between saves in milliseconds
+    private readonly saveInterval: number; // Minimum time between saves in milliseconds
 
     constructor(type: string = "cache", memoryTTL: number = 300000, saveInterval: number = 10000) { // Default 5 min TTL, 10s save interval
         this.type = type;
-        this.db = getDB();
         this.env = getEnv();
         this.memoryTTL = memoryTTL;
         this.saveInterval = saveInterval;
@@ -59,13 +56,13 @@ export class CacheImpl {
 
                 const data = await response.json();
                 const now = Date.now();
-
-                for (let key in data) {
-                    this.cache.set(key, {value: data[key], timestamp: now});
+                const typedData = data as Record<string, any>;
+                for (let key in typedData) {
+                    this.cache.set(key, {value: typedData[key], timestamp: now});
                 }
 
                 this.loaded = true;
-                console.log(`Cache loaded: ${this.type}, ${Object.keys(data).length} entries`);
+                console.log(`Cache loaded: ${this.type}, ${Object.keys(typedData).length} entries`);
             } catch (e: any) {
                 // Don't fail if cache loading fails, just log and continue
                 console.error(`Cache load failed for ${this.type}:`, e.message);
@@ -148,7 +145,7 @@ export class CacheImpl {
         return this.getByPattern(suffix, false);
     }
 
-    async getOrSet<T>(key: string, valueProvider: () => Promise<T>, ttl?: number): Promise<T> {
+    async getOrSet<T>(key: string, valueProvider: () => Promise<T>): Promise<T> {
         const cached = await this.get(key);
         if (cached !== undefined) {
             return cached as T;
@@ -156,7 +153,7 @@ export class CacheImpl {
 
         try {
             const newValue = await valueProvider();
-            await this.set(key, newValue, true, ttl);
+            await this.set(key, newValue, true);
             return newValue;
         } catch (e) {
             console.error(`Error in getOrSet for key ${key}:`, e);
@@ -164,11 +161,11 @@ export class CacheImpl {
         }
     }
 
-    async getOrDefault<T>(key: string, defaultValue: T, ttl?: number): Promise<T> {
-        return this.getOrSet(key, async () => defaultValue, ttl);
+    async getOrDefault<T>(key: string, defaultValue: T): Promise<T> {
+        return this.getOrSet(key, async () => defaultValue);
     }
 
-    async set(key: string, value: any, save: boolean = true, ttl?: number): Promise<void> {
+    async set(key: string, value: any, save: boolean = true): Promise<void> {
         if (!this.loaded && !this.loading) {
             await this.load();
         }
@@ -181,27 +178,6 @@ export class CacheImpl {
         if (save) {
             this.queueSave(key);
         }
-    }
-
-    private queueSave(key: string): void {
-        this.saveQueue.add(key);
-
-        // Schedule a save if one isn't already scheduled
-        if (!this.saveTimer) {
-            this.saveTimer = setTimeout(() => this.saveQueuedItems(), this.saveInterval);
-        }
-    }
-
-    private async saveQueuedItems(): Promise<void> {
-        this.saveTimer = null;
-
-        if (this.saveQueue.size === 0) {
-            return;
-        }
-
-        console.log(`Saving ${this.saveQueue.size} items for cache ${this.type}`);
-        await this.save();
-        this.saveQueue.clear();
     }
 
     async delete(key: string, save: boolean = true): Promise<void> {
@@ -273,6 +249,27 @@ export class CacheImpl {
         } catch (e: any) {
             console.error(`Failed to save cache ${this.type}:`, e.message);
         }
+    }
+
+    private queueSave(key: string): void {
+        this.saveQueue.add(key);
+
+        // Schedule a save if one isn't already scheduled
+        if (!this.saveTimer) {
+            this.saveTimer = setTimeout(() => this.saveQueuedItems(), this.saveInterval);
+        }
+    }
+
+    private async saveQueuedItems(): Promise<void> {
+        this.saveTimer = null;
+
+        if (this.saveQueue.size === 0) {
+            return;
+        }
+
+        console.log(`Saving ${this.saveQueue.size} items for cache ${this.type}`);
+        await this.save();
+        this.saveQueue.clear();
     }
 }
 

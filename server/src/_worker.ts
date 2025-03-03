@@ -7,7 +7,7 @@ import * as schema from './db/schema';
 import { app } from "./server";
 import { friendCrontab } from "./services/friends";
 import { rssCrontab } from "./services/rss";
-import {CacheImpl, initializeCaches} from "./utils/cache";
+import {initializeCaches} from "./utils/cache";
 import { dbToken, envToken } from "./utils/di";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>
 
@@ -66,7 +66,6 @@ export default {
     },
 
     async scheduled(
-        controller: ScheduledController | null,
         env: Env,
         ctx: ExecutionContext
     ) {

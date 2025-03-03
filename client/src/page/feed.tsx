@@ -187,7 +187,7 @@ export function FeedPage({id, TOC, clean}: { id: string, TOC: () => JSX.Element,
                         mermaid.initialize({startOnLoad: false, theme: "dark"});
                         return mermaid.run({
                             suppressErrors: true,
-                            nodes: contentRef.current.querySelectorAll("pre.mermaid_dark")
+                            nodes: contentRef.current?.querySelectorAll("pre.mermaid_dark")
                         });
                     })
                     .catch(err => console.error("Mermaid rendering error:", err));
