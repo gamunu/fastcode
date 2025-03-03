@@ -12,11 +12,11 @@ import {bindTagToPost} from "./tag";
 
 export function FeedService() {
     const db: DB = getDB();
-    return new Elysia({ aot: false })
+    return new Elysia({aot: false})
         .use(setup())
         .group('/feed', (group) =>
             group
-                .get('/', async ({ admin, set, query: { page, limit, type } }) => {
+                .get('/', async ({admin, set, query: {page, limit, type}}) => {
                     if ((type === 'draft' || type === 'unlisted') && !admin) {
                         set.status = 403;
                         return 'Permission denied';
@@ -30,7 +30,7 @@ export function FeedService() {
                         return cached;
                     }
                     const where = type === 'draft' ? eq(feeds.draft, 1) : type === 'unlisted' ? and(eq(feeds.draft, 0), eq(feeds.listed, 0)) : and(eq(feeds.draft, 0), eq(feeds.listed, 1));
-                    const size = await db.select({ count: count() }).from(feeds).where(where);
+                    const size = await db.select({count: count()}).from(feeds).where(where);
                     if (size[0].count === 0) {
                         return {
                             size: 0,
@@ -49,22 +49,22 @@ export function FeedService() {
                                 columns: {},
                                 with: {
                                     hashtag: {
-                                        columns: { id: true, name: true }
+                                        columns: {id: true, name: true}
                                     }
                                 }
                             }, user: {
-                                columns: { id: true, username: true, avatar: true }
+                                columns: {id: true, username: true, avatar: true}
                             }
                         },
                         orderBy: [desc(feeds.top), desc(feeds.createdAt), desc(feeds.updatedAt)],
                         offset: page_num * limit_num,
                         limit: limit_num + 1,
-                    })).map(({ content, hashtags, summary, ...other }) => {
+                    })).map(({content, hashtags, summary, ...other}) => {
                         // 提取首图
                         const avatar = extractImage(content);
                         return {
                             summary: summary.length > 0 ? summary : content.length > 100 ? content.slice(0, 100) : content,
-                            hashtags: hashtags.map(({ hashtag }) => hashtag),
+                            hashtags: hashtags.map(({hashtag}) => hashtag),
                             avatar,
                             ...other
                         }
@@ -101,7 +101,12 @@ export function FeedService() {
                         orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
                     }))
                 })
-                .post('/', async ({ admin, set, uid, body: { title, alias, listed, content, summary, draft, tags, createdAt } }) => {
+                .post('/', async ({
+                                      admin,
+                                      set,
+                                      uid,
+                                      body: {title, alias, listed, content, summary, draft, tags, createdAt}
+                                  }) => {
                     if (!admin) {
                         set.status = 403;
                         return 'Permission denied';
@@ -135,7 +140,7 @@ export function FeedService() {
                         draft: draft ? 1 : 0,
                         createdAt: date,
                         updatedAt: date
-                    }).returning({ insertedId: feeds.id });
+                    }).returning({insertedId: feeds.id});
                     await bindTagToPost(db, result[0].insertedId, tags);
                     await PublicCache().deletePrefix('feeds_');
                     if (result.length === 0) {
@@ -156,128 +161,159 @@ export function FeedService() {
                         tags: t.Array(t.String())
                     })
                 })
-                .get('/:id', async ({ uid, admin, set, headers, params: { id } }) => {
+                .get('/:id', async ({uid, admin, set, headers, params: {id}}) => {
                     const id_num = parseInt(id);
                     const cache = PublicCache();
                     const cacheKey = `feed_${id}`;
-                    const feed = await cache.getOrSet(cacheKey, () => (db.query.feeds.findFirst({
-                        where: or(eq(feeds.id, id_num), eq(feeds.alias, id)),
-                        with: {
-                            hashtags: {
-                                columns: {},
-                                with: {
-                                    hashtag: {
-                                        columns: { id: true, name: true }
-                                    }
-                                }
-                            }, user: {
-                                columns: { id: true, username: true, avatar: true }
+
+                    // Try to get from cache first with better error handling
+                    try {
+                        const cachedData = await cache.get(cacheKey);
+                        if (cachedData) {
+                            // If we have cached data with visits info, return it immediately
+                            if (cachedData.pv !== undefined) {
+                                return cachedData;
                             }
+
+                            // If we have cached data but need to add visit info
+                            const config = ClientConfig();
+                            const enableVisit = await config.getOrDefault('counter.enabled', true);
+
+                            if (enableVisit) {
+                                // Update visits in background without waiting for it
+                                updateVisitStats(db, id_num, headers, cachedData).then(updatedData => {
+                                    cache.set(cacheKey, updatedData);
+                                });
+                            }
+
+                            return cachedData;
                         }
-                    })));
-                    if (!feed) {
-                        set.status = 404;
-                        return 'Not found';
-                    }
-                    // permission check
-                    if (feed.draft && feed.uid !== uid && !admin) {
-                        set.status = 403;
-                        return 'Permission denied';
+                    } catch (e) {
+                        console.error('Cache error:', e);
+                        // Continue to fetch from database if cache fails
                     }
 
-                    const { hashtags, ...other } = feed;
-                    const hashtags_flatten = hashtags.map((f) => f.hashtag);
-
-
-                    // update visits
-                    const config = ClientConfig()
-                    const enableVisit = await config.getOrDefault('counter.enabled', true);
-                    let pv = 0;
-                    let uv = 0;
-                    if (enableVisit) {
-                        const ip = headers['cf-connecting-ip'] || headers['x-real-ip'] || "UNK"
-                        await db.insert(visits).values({
-                            feedId: feed.id,
-                            ip: ip,
+                    // If not in cache, fetch from database
+                    try {
+                        const feed = await db.query.feeds.findFirst({
+                            where: or(eq(feeds.id, id_num), eq(feeds.alias, id)),
+                            with: {
+                                hashtags: {
+                                    columns: {},
+                                    with: {
+                                        hashtag: {
+                                            columns: {id: true, name: true}
+                                        }
+                                    }
+                                },
+                                user: {
+                                    columns: {id: true, username: true, avatar: true}
+                                }
+                            }
                         });
-                        const visit = await db.query.visits.findMany({
-                            where: eq(visits.feedId, feed.id),
-                            columns: { id: true, ip: true }
-                        });
-                        pv = visit.length;
-                        uv = new Set(visit.map((v) => v.ip)).size;
+
+                        if (!feed) {
+                            set.status = 404;
+                            return 'Not found';
+                        }
+
+                        // Permission check
+                        if (feed.draft && feed.uid !== uid && !admin) {
+                            set.status = 403;
+                            return 'Permission denied';
+                        }
+
+                        const {hashtags, ...other} = feed;
+                        const hashtags_flatten = hashtags.map((f) => f.hashtag);
+
+                        // Create the base data
+                        const data = {
+                            ...other,
+                            hashtags: hashtags_flatten,
+                            pv: 0,
+                            uv: 0
+                        };
+
+                        // Update visit stats asynchronously and cache the result
+                        const config = ClientConfig();
+                        const enableVisit = await config.getOrDefault('counter.enabled', true);
+
+                        if (enableVisit) {
+                            // Start processing visits, but don't wait for it
+                            updateVisitStats(db, feed.id, headers, data).then(updatedData => {
+                                cache.set(cacheKey, updatedData);
+                            });
+
+                            // Cache the initial data immediately without visit stats
+                            cache.set(cacheKey, data);
+                        } else {
+                            // If visits are disabled, just cache the data as is
+                            cache.set(cacheKey, data);
+                        }
+
+                        return data;
+                    } catch (e) {
+                        console.error('Database error:', e);
+                        set.status = 500;
+                        return 'Server error';
                     }
-                    const data = {
-                        ...other,
-                        hashtags: hashtags_flatten,
-                        pv,
-                        uv
-                    };
-                    return data;
                 })
-                .get("/adjacent/:id", async ({ set, params: { id } }) => {
+                .get("/adjacent/:id", async ({set, params: {id}}) => {
                     let id_num: number;
-                    if (isNaN(parseInt(id))) {
-                        const aliasRecord = await db
-                            .select({ id: feeds.id })
-                            .from(feeds)
-                            .where(eq(feeds.alias, id));
-                        if (aliasRecord.length === 0) {
+
+                    // First, determine the article ID
+                    try {
+                        if (isNaN(parseInt(id))) {
+                            const aliasRecord = await db
+                                .select({id: feeds.id})
+                                .from(feeds)
+                                .where(eq(feeds.alias, id));
+
+                            if (aliasRecord.length === 0) {
+                                set.status = 404;
+                                return "Not found";
+                            }
+                            id_num = aliasRecord[0].id;
+                        } else {
+                            id_num = parseInt(id);
+                        }
+                    } catch (e) {
+                        console.error('Error resolving ID:', e);
+                        set.status = 500;
+                        return "Server error";
+                    }
+
+                    // Try to get from cache first
+                    const cache = PublicCache();
+                    const cacheKey = `adjacent_${id_num}`;
+
+                    try {
+                        const cachedData = await cache.get(cacheKey);
+                        if (cachedData) {
+                            return cachedData;
+                        }
+                    } catch (e) {
+                        console.error('Cache error:', e);
+                        // Continue if cache fails
+                    }
+
+                    // Get the current article's creation time
+                    try {
+                        const feed = await db.query.feeds.findFirst({
+                            where: eq(feeds.id, id_num),
+                            columns: {createdAt: true},
+                        });
+
+                        if (!feed) {
                             set.status = 404;
                             return "Not found";
                         }
-                        id_num = aliasRecord[0].id;
-                    } else {
-                        id_num = parseInt(id);
-                    }
 
-                    const feed = await db.query.feeds.findFirst({
-                        where: eq(feeds.id, id_num),
-                        columns: {createdAt: true},
-                    });
-                    if (!feed) {
-                        set.status = 404;
-                        return "Not found";
-                    }
-                    const created_at = feed.createdAt;
+                        const created_at = feed.createdAt;
 
-                    const cache = PublicCache();
-                    function formatAndCacheData(
-                        feed: any,
-                        feedDirection: "previous_feed" | "next_feed",
-                    ) {
-                        if (feed) {
-                            const hashtags_flatten = feed.hashtags.map((f: any) => f.hashtag);
-                            const summary =
-                                feed.summary.length > 0
-                                    ? feed.summary
-                                    : feed.content.length > 50
-                                        ? feed.content.slice(0, 50)
-                                        : feed.content;
-                            // NOTE: feed.id is adjacent feed, id_num is current feed id
-                            const cacheKey = `${feed.id}_${feedDirection}_${id_num}`;
-                            const cacheData = {
-                            id: feed.id,
-                            title: feed.title,
-                            summary: summary,
-                            hashtags: hashtags_flatten,
-                            createdAt: feed.createdAt,
-                            updatedAt: feed.updatedAt,
-                            };
-                            cache.set(cacheKey, cacheData);
-                            return cacheData;
-                        }
-                        return null;
-                    }
-                    const getPreviousFeed = async () => {
-                        // It should return an array with only one data item
-                        const previousFeedCached = await cache.getBySuffix(
-                            `previous_feed_${id_num}`,
-                        );
-                        if (previousFeedCached && previousFeedCached.length > 0) {
-                            return previousFeedCached[0];
-                        } else {
-                            const tempPreviousFeed = await db.query.feeds.findFirst({
+                        // Fetch previous and next articles in parallel
+                        const [previousFeed, nextFeed] = await Promise.all([
+                            db.query.feeds.findFirst({
                                 where: and(
                                     and(eq(feeds.draft, 0), eq(feeds.listed, 1)),
                                     lt(feeds.createdAt, created_at),
@@ -288,26 +324,13 @@ export function FeedService() {
                                         columns: {},
                                         with: {
                                             hashtag: {
-                                                columns: { id: true, name: true },
+                                                columns: {id: true, name: true},
                                             },
                                         },
                                     },
-                                    user: {
-                                        columns: { id: true, username: true, avatar: true },
-                                    },
                                 },
-                            });
-                            return formatAndCacheData(tempPreviousFeed, "previous_feed");
-                        }
-                    };
-                    const getNextFeed = async () => {
-                        const nextFeedCached = await cache.getBySuffix(
-                            `next_feed_${id_num}`,
-                        );
-                        if (nextFeedCached && nextFeedCached.length > 0) {
-                            return nextFeedCached[0];
-                        } else {
-                            const tempNextFeed = await db.query.feeds.findFirst({
+                            }),
+                            db.query.feeds.findFirst({
                                 where: and(
                                     and(eq(feeds.draft, 0), eq(feeds.listed, 1)),
                                     gt(feeds.createdAt, created_at),
@@ -318,35 +341,41 @@ export function FeedService() {
                                         columns: {},
                                         with: {
                                             hashtag: {
-                                                columns: { id: true, name: true },
+                                                columns: {id: true, name: true},
                                             },
                                         },
                                     },
-                                    user: {
-                                        columns: { id: true, username: true, avatar: true },
-                                    },
                                 },
-                            });
-                            return formatAndCacheData(tempNextFeed, "next_feed");
-                        }
-                    };
 
-                    const [previousFeed, nextFeed] = await Promise.all([
-                        getPreviousFeed(),
-                        getNextFeed(),
-                    ]);
-                    return {
-                        previousFeed,
-                        nextFeed,
-                    };
+                            })
+                        ]);
+
+                        // Process the feeds into a simplified format
+                        const processedPrevious = previousFeed ? formatAdjacentFeed(previousFeed) : null;
+                        const processedNext = nextFeed ? formatAdjacentFeed(nextFeed) : null;
+
+                        const result = {
+                            previousFeed: processedPrevious,
+                            nextFeed: processedNext,
+                        };
+
+                        // Cache the result
+                        cache.set(cacheKey, result);
+
+                        return result;
+                    } catch (e) {
+                        console.error('Error fetching adjacent articles:', e);
+                        set.status = 500;
+                        return "Server error";
+                    }
                 })
                 .post('/:id', async ({
-                    admin,
-                    set,
-                    uid,
-                    params: { id },
-                    body: { title, listed, content, summary, alias, draft, top, tags, createdAt }
-                }) => {
+                                         admin,
+                                         set,
+                                         uid,
+                                         params: {id},
+                                         body: {title, listed, content, summary, alias, draft, top, tags, createdAt}
+                                     }) => {
                     const id_num = parseInt(id);
                     const feed = await db.query.feeds.findFirst({
                         where: eq(feeds.id, id_num)
@@ -389,12 +418,12 @@ export function FeedService() {
                     })
                 })
                 .post('/top/:id', async ({
-                    admin,
-                    set,
-                    uid,
-                    params: { id },
-                    body: { top }
-                }) => {
+                                             admin,
+                                             set,
+                                             uid,
+                                             params: {id},
+                                             body: {top}
+                                         }) => {
                     const id_num = parseInt(id);
                     const feed = await db.query.feeds.findFirst({
                         where: eq(feeds.id, id_num)
@@ -417,7 +446,7 @@ export function FeedService() {
                         top: t.Integer()
                     })
                 })
-                .delete('/:id', async ({ admin, set, uid, params: { id } }) => {
+                .delete('/:id', async ({admin, set, uid, params: {id}}) => {
                     const id_num = parseInt(id);
                     const feed = await db.query.feeds.findFirst({
                         where: eq(feeds.id, id_num)
@@ -435,7 +464,7 @@ export function FeedService() {
                     return 'Deleted';
                 })
         )
-        .get('/search/:keyword', async ({ admin, params: { keyword }, query: { page, limit } }) => {
+        .get('/search/:keyword', async ({admin, params: {keyword}, query: {page, limit}}) => {
             keyword = decodeURI(keyword);
             const cache = PublicCache();
             const page_num = (page ? page > 0 ? page : 1 : 1) - 1;
@@ -450,7 +479,7 @@ export function FeedService() {
             const cacheKey = `search_${keyword}`;
             const searchKeyword = `%${keyword}%`;
             const whereClause = or(like(feeds.title, searchKeyword),
-                    like(feeds.content, searchKeyword),
+                like(feeds.content, searchKeyword),
                 like(feeds.summary, searchKeyword),
                 like(feeds.alias, searchKeyword));
             const feed_list = (await cache.getOrSet(cacheKey, () => db.query.feeds.findMany({
@@ -464,18 +493,18 @@ export function FeedService() {
                         columns: {},
                         with: {
                             hashtag: {
-                                columns: { id: true, name: true }
+                                columns: {id: true, name: true}
                             }
                         }
                     }, user: {
-                        columns: { id: true, username: true, avatar: true }
+                        columns: {id: true, username: true, avatar: true}
                     }
                 },
                 orderBy: [desc(feeds.createdAt), desc(feeds.updatedAt)],
-            }))).map(({ content, hashtags, summary, ...other }) => {
+            }))).map(({content, hashtags, summary, ...other}) => {
                 return {
                     summary: summary.length > 0 ? summary : content.length > 100 ? content.slice(0, 100) : content,
-                    hashtags: hashtags.map(({ hashtag }) => hashtag),
+                    hashtags: hashtags.map(({hashtag}) => hashtag),
                     ...other
                 }
             });
@@ -504,7 +533,7 @@ export function FeedService() {
                 limit: t.Optional(t.Numeric()),
             })
         })
-        .post('wp', async ({ set, admin, body: { data } }) => {
+        .post('wp', async ({set, admin, body: {data}}) => {
             if (!admin) {
                 set.status = 403;
                 return 'Permission denied';
@@ -549,7 +578,7 @@ export function FeedService() {
             let skippedList: { title: string, reason: string }[] = [];
             for (const item of feedItems) {
                 if (!item.content) {
-                    skippedList.push({ title: item.title, reason: "no content" });
+                    skippedList.push({title: item.title, reason: "no content"});
                     skipped++;
                     continue;
                 }
@@ -557,7 +586,7 @@ export function FeedService() {
                     where: eq(feeds.content, item.content)
                 });
                 if (exist) {
-                    skippedList.push({ title: item.title, reason: "content exists" });
+                    skippedList.push({title: item.title, reason: "content exists"});
                     skipped++;
                     continue;
                 }
@@ -570,7 +599,7 @@ export function FeedService() {
                     draft: item.draft ? 1 : 0,
                     createdAt: item.createdAt,
                     updatedAt: item.updatedAt
-                }).returning({ insertedId: feeds.id });
+                }).returning({insertedId: feeds.id});
                 if (item.tags) {
                     await bindTagToPost(db, result[0].insertedId, item.tags);
                 }
@@ -612,4 +641,54 @@ async function clearFeedCache(id: number, alias: string | null, newAlias: string
         await cache.delete(`feed_${alias}`, false);
     if (newAlias)
         await cache.delete(`feed_${newAlias}`, false);
+}
+
+// Helper function to format adjacent feed data
+function formatAdjacentFeed(feed: any) {
+    if (!feed) return null;
+
+    const hashtags_flatten = feed.hashtags.map((f: any) => f.hashtag);
+    const summary = feed.summary?.length > 0
+        ? feed.summary
+        : feed.content?.length > 50
+            ? feed.content.slice(0, 50)
+            : feed.content || '';
+
+    return {
+        id: feed.id,
+        title: feed.title,
+        summary: summary,
+        hashtags: hashtags_flatten,
+        createdAt: feed.createdAt,
+        updatedAt: feed.updatedAt,
+    };
+}
+
+// Helper function to update visit statistics for an article
+async function updateVisitStats(db: DB, feedId: number, headers: any, data: any) {
+    try {
+        const ip = headers['cf-connecting-ip'] || headers['x-real-ip'] || "UNK";
+
+        // Record the visit
+        await db.insert(visits).values({
+            feedId: feedId,
+            ip: ip,
+        });
+
+        // Count visits
+        const visitStats = await db.query.visits.findMany({
+            where: eq(visits.feedId, feedId),
+            columns: {id: true, ip: true}
+        });
+
+        // Update the data with visit statistics
+        return {
+            ...data,
+            pv: visitStats.length,
+            uv: new Set(visitStats.map((v) => v.ip)).size
+        };
+    } catch (e) {
+        console.error('Error updating visit stats:', e);
+        return data; // Return original data if visit update fails
+    }
 }

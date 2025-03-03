@@ -7,7 +7,7 @@ import * as schema from './db/schema';
 import { app } from "./server";
 import { friendCrontab } from "./services/friends";
 import { rssCrontab } from "./services/rss";
-import { CacheImpl } from "./utils/cache";
+import {initializeCaches} from "./utils/cache";
 import { dbToken, envToken } from "./utils/di";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>
 
@@ -16,23 +16,56 @@ export default {
         request: Request,
         env: Env,
     ): Promise<Response> {
+        // Set up DI container
         const db = drizzle(env.DB, { schema: schema })
         Container.set(envToken, env)
         Container.set(dbToken, db)
 
-        const exist = Container.has("cache")
-        if (!exist) {
-            Container.set("cache", new CacheImpl());
-            Container.set("server.config", new CacheImpl("server.config"));
-            Container.set("client.config", new CacheImpl("client.config"));
+        // Initialize caches with optimized configuration
+        initializeCaches();
+
+        // Special handling for SEO routes
+        const url = new URL(request.url);
+        if (url.pathname.startsWith('/seo/')) {
+            // Bypass normal app initialization for SEO routes
+            // This makes SEO response much faster
+            return await new Elysia({ aot: false })
+                .use(app())
+                .handle(request);
         }
 
-        return await new Elysia({ aot: false })
-            .use(app())
-            .handle(request)
+        // Check for preflight requests and handle them efficiently
+        if (request.method === 'OPTIONS') {
+            return new Response(null, {
+                headers: {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                    'Access-Control-Max-Age': '86400',
+                }
+            });
+        }
+
+        // Use a try-catch block for better error handling
+        try {
+            return await new Elysia({ aot: false })
+                .use(app())
+                .handle(request);
+        } catch (error) {
+            console.error('Unhandled exception in worker:', error);
+            return new Response(JSON.stringify({
+                error: 'Internal server error',
+                message: 'An unexpected error occurred'
+            }), {
+                status: 500,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
     },
+
     async scheduled(
-        _controller: ScheduledController | null,
         env: Env,
         ctx: ExecutionContext
     ) {
@@ -40,14 +73,17 @@ export default {
         Container.set(envToken, env)
         Container.set(dbToken, db)
 
-        const exist = Container.has("cache")
-        if (!exist) {
-            Container.set("cache", new CacheImpl());
-            Container.set("server.config", new CacheImpl("server.config"));
-            Container.set("client.config", new CacheImpl("client.config"));
-        }
+        // Initialize caches with optimized configuration
+        initializeCaches();
 
-        await friendCrontab(env, ctx)
-        await rssCrontab(env)
+        try {
+            // Execute the crontab tasks
+            await Promise.all([
+                friendCrontab(env, ctx),
+                rssCrontab(env)
+            ]);
+        } catch (error) {
+            console.error('Error in scheduled task:', error);
+        }
     },
 }
