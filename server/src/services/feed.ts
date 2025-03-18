@@ -632,10 +632,8 @@ type FeedItem = {
 async function clearFeedCache(id: number, alias: string | null, newAlias: string | null) {
     const cache = PublicCache()
     await cache.deletePrefix('feeds_');
-    await cache.deletePrefix('search_');
     await cache.delete(`feed_${id}`, false);
-    await cache.deletePrefix(`${id}_previous_feed`);
-    await cache.deletePrefix(`${id}_next_feed`);
+    await cache.delete(`adjacent_${id}`, false);  // Clear adjacent feeds cache
     if (alias === newAlias) return;
     if (alias)
         await cache.delete(`feed_${alias}`, false);
