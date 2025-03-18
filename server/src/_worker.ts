@@ -7,7 +7,7 @@ import * as schema from './db/schema';
 import { app } from "./server";
 import { friendCrontab } from "./services/friends";
 import { rssCrontab } from "./services/rss";
-import {initializeCaches} from "./utils/cache";
+import {CacheImpl} from "./utils/cache";
 import { dbToken, envToken } from "./utils/di";
 export type DB = DrizzleD1Database<typeof import("./db/schema")>
 
@@ -22,7 +22,12 @@ export default {
         Container.set(dbToken, db)
 
         // Initialize caches with optimized configuration
-        initializeCaches();
+        const exist = Container.has("cache")
+        if (!exist) {
+            Container.set("cache", new CacheImpl());
+            Container.set("server.config", new CacheImpl("server.config"));
+            Container.set("client.config", new CacheImpl("client.config"));
+        }
 
         // Special handling for SEO routes
         const url = new URL(request.url);
@@ -73,8 +78,12 @@ export default {
         Container.set(envToken, env)
         Container.set(dbToken, db)
 
-        // Initialize caches with optimized configuration
-        initializeCaches();
+        const exist = Container.has("cache")
+        if (!exist) {
+            Container.set("cache", new CacheImpl());
+            Container.set("server.config", new CacheImpl("server.config"));
+            Container.set("client.config", new CacheImpl("client.config"));
+        }
 
         try {
             // Execute the crontab tasks
