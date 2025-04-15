@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@types/bun": "^1.1.2",
-    "drizzle-kit": "^0.21.2",
+    "drizzle-kit": "^0.31.0",
     "wrangler": "^3.63.1",
     "@cloudflare/vitest-pool-workers": "^0.8.0",
     "@cloudflare/workers-types": "^4.20240529.0",
