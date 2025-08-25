@@ -30,7 +30,7 @@
     "@elysiajs/eden": "^1.0.13",
     "@elysiajs/server-timing": "^1.0.2",
     "arctic": "^1.9.0",
-    "drizzle-orm": "^0.30.10",
+    "drizzle-orm": "^0.44.0",
     "elysia": "^1.0.21",
     "elysia-oauth2": "1.2.0",
     "feed": "^4.2.2",
